@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import sys
 import os
+import json
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -12,88 +13,138 @@ from analysis.classifier import CLODClassifier
 
 st.set_page_config(page_title="C-LOD リアル分析", layout="wide", page_icon="🏛️")
 
+@st.cache_data
+def load_starter_pack():
+    path = os.path.join(os.path.dirname(__file__), '..', 'data', 'starter_pack.json')
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
 def main():
-    st.title("🏛️ C-LOD: 政治発言の論理的深度分析 🇯🇵")
-    st.markdown("国会会議録とe-Stat（政府統計）を連携させ、政治家の発言の「論理的深度（L1-L4）」と現実のギャップを可視化します。")
+    st.title("🏛️ C-LOD: Policy vs. Reality (Gap Analysis) 🇯🇵")
+    st.markdown("政治家の発言（Words）と現実の統計（Results）のギャップを即座に可視化し、発言の「論理的深度」を評価します。")
 
-    # サイドバーでキーワード設定
-    st.sidebar.header("🔍 分析設定")
-    keyword = st.sidebar.text_input("検索キーワード", value="少子化")
-    limit = st.sidebar.slider("取得件数", min_value=1, max_value=30, value=10)
+    # サイドバー：データソースと検索設定
+    st.sidebar.header("⚙️ Data Source")
+    data_mode = st.sidebar.radio("データソースを選択", ["Starter Pack (Demo)", "Live API Search (国会図書館)"])
     
-    # データの取得と分析
-    classifier = CLODClassifier()
+    starter_data = load_starter_pack()
     
-    col1, col2 = st.columns([2, 1])
+    keyword = "少子化"
+    raw_records = []
     
-    with col1:
-        st.subheader("🗣️ 直近の国会発言（Diet Records）")
+    if data_mode == "Starter Pack (Demo)":
+        st.sidebar.info("デモモード：保存済みのデータを高速表示します（APIキー不要）。")
+        if starter_data:
+            keyword = st.sidebar.selectbox("キーワード", list(starter_data.keys()))
+            raw_records = starter_data[keyword]
+        else:
+            st.sidebar.error("Starter Packが見つかりません。")
+    else:
+        st.sidebar.warning("ライブモード：リアルタイムで国会APIをスキャンします。")
+        keyword = st.sidebar.text_input("検索キーワード", value="少子化")
+        limit = st.sidebar.slider("取得件数", min_value=1, max_value=30, value=5)
         
-        # 開発用のキャッシュクリアボタン（強制リロード用）
-        if st.sidebar.button("🔄 キャッシュをクリアして再取得", type="primary"):
+        if st.sidebar.button("🔍 ライブ検索実行", type="primary"):
             st.cache_data.clear()
-            
-        with st.spinner(f"「{keyword}」に関する国会発言を取得中... ⏳"):
-            try:
-                raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
-                # 追加: データをフロントエンドで正しく認識できているか確認するためのデバッグプリント
-                st.success(f"📺 デバッグ: `{keyword}` のデータを {len(raw_records)} 件取得しました！")
-            except Exception as e:
-                st.error(f"国会会議録APIリクエストエラー: {e}")
-                raw_records = []
-            
-        if not raw_records:
-            st.warning("対象キーワードでの国会発言データが取得できませんでした。")
-            st.info("💡 **ヒント**: \n- 検索期間内に該当の発言がない可能性があります。キーワードを「予算」や「教育」などに変えてみてください。\n- 実行環境（Windows PowerShell等）の文字コードの影響で日本語クエリが正しくAPIに送信されていない場合があります。その場合はコマンドプロンプトや `set PYTHONIOENCODING=utf-8` をお試しください。")
-            return
-            
-        processed_records = [classifier.predict(r.copy()) for r in raw_records]
-        df_diet = pd.DataFrame(processed_records)
-        
-        # 概要メトリクス
-        st.write("### 📊 L4 深度分析スコア")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Level 4 (データに基づく具体策)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 4")]))
-        m2.metric("Level 3 (強いコミットメント)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 3")]))
-        m3.metric("Level 2 (現状分析のみ)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 2")]))
-        m4.metric("Level 1 (抽象的・ポピュリズム)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 1")]))
-        
-        # 発言データテーブル
-        st.dataframe(
-            df_diet[["date", "speaker", "voice", "L2_Urgency", "L3_Actionability", "L4_Final_Status"]],
-            column_config={
-                "date": "日付",
-                "speaker": "発言者",
-                "voice": st.column_config.TextColumn("発言内容", width="large"),
-                "L2_Urgency": "コミットメント",
-                "L3_Actionability": "エビデンス",
-                "L4_Final_Status": "論理的深度 (L4)"
-            },
-            hide_index=True,
-            use_container_width=True
-        )
+            with st.spinner(f"「{keyword}」に関する国会発言を取得中... ⏳"):
+                try:
+                    raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
+                    st.session_state['live_records'] = raw_records
+                except Exception as e:
+                    st.error(f"国会会議録APIリクエストエラー: {e}")
+                    
+        # Button pressed logic memory
+        if 'live_records' in st.session_state:
+            raw_records = st.session_state['live_records']
 
-    with col2:
-        st.subheader("📉 統計データとのギャップ検証")
-        st.markdown("e-Statから取得した実際のデータ推移（例：出生数）")
+    if not raw_records and data_mode == "Live API Search (国会図書館)":
+        st.info("👈 サイドバーから「ライブ検索実行」をクリックしてデータを取得してください。")
+        return
+    elif not raw_records:
+        st.warning("データがありません。")
+        return
+
+    # Metadata-First Search UI
+    st.subheader(f"🗣️ 「{keyword}」に関する国会発言リスト")
+    
+    # Extract metadata for the table (excluding full voice text to keep it snappy)
+    meta_df = pd.DataFrame(raw_records)[["date", "speaker", "meeting"]]
+    meta_df.index = meta_df.index + 1 # 1-indexed for display
+    
+    st.dataframe(
+        meta_df,
+        column_config={
+            "date": "発言日",
+            "speaker": "発言者",
+            "meeting": "会議名"
+        },
+        width="stretch"
+    )
+    
+    # 選択した発言の分析 (Detailed Analysis)
+    st.subheader("🧠 Deep Analysis (論理的深度の評価)")
+    st.markdown("リストから発言を選んで、詳細な分析と現実データ（e-Stat）との比較を行います。")
+    
+    record_options = [f"[{r['date']}] {r['speaker']} ({r['meeting']})" for r in raw_records]
+    selected_idx = st.selectbox("分析対象の発言を選択:", range(len(record_options)), format_func=lambda x: record_options[x])
+    
+    selected_record = raw_records[selected_idx]
+    speech_year = selected_record['date'].split('-')[0] # Get the year for causality plot
+    
+    # 遅延評価：選択された時のみ L1-L4 分析を実行
+    classifier = CLODClassifier()
+    analyzed_record = classifier.predict(selected_record.copy())
+    
+    col_analysis, col_chart = st.columns([1, 1])
+    
+    with col_analysis:
+        st.markdown("#### 発言内容 (Words)")
+        st.info(f"「... {analyzed_record['voice'][:300]} ...」") # 抜粋表示
+        
+        st.markdown("#### 評価結果 (Score)")
+        metric_col1, metric_col2 = st.columns(2)
+        metric_col1.metric("L2 (コミットメント)", analyzed_record['L2_Urgency'])
+        metric_col2.metric("L4 (論理的深度)", analyzed_record['L4_Final_Status'])
+        
+        score_level = analyzed_record['L4_Final_Status']
+        if "Level 4" in score_level:
+            st.success("✅ **高評価**: 具体的なデータに基づいた実現性の高い公約です。")
+        elif "Level 1" in score_level:
+            st.error("📉 **抽象的**: 具体性が欠けており、ポピュリズムの可能性があります。")
+
+    with col_chart:
+        st.markdown("#### 現実の統計推移 (Results - e-Stat)")
         
         with st.spinner("e-Statデータを取得中... ⏳"):
             stats_data = fetch_birth_rate_stats()
             
         df_stats = pd.DataFrame(stats_data)
         
-        # 折れ線グラフ
-        chart = alt.Chart(df_stats).mark_line(point=True, color="firebrick").encode(
+        # Causality Visualization: Overlay the speech year on the reality chart
+        base_chart = alt.Chart(df_stats).mark_line(point=True).encode(
             x=alt.X("year:O", title="年"),
-            y=alt.Y("births:Q", title="出生数", scale=alt.Scale(zero=False)),
+            y=alt.Y("births:Q", title="出生数 (現実)", scale=alt.Scale(zero=False)),
             tooltip=["year", "births"]
-        ).properties(
-            title="日本の年間出生数推移",
-            height=300
-        )
-        st.altair_chart(chart, use_container_width=True)
+        ).properties( height=250 )
         
-        st.info("💡 **Reality Gap Analysis**: \n\n国会での「強いコミットメント」や「論理的な具体策（L4）」が増えている一方で、実際の統計指標が改善されていない場合、そこには「実行プロセス」や「政策の有効性」における深刻なギャップが存在することを示唆しています。")
+        # Highlight the year the speech was made
+        try:
+            speech_year_int = int(speech_year)
+            # Find if speech year is in our stats data
+            if str(speech_year) in df_stats['year'].values:
+                highlight = alt.Chart(pd.DataFrame({'year': [str(speech_year)]})).mark_rule(color='red', strokeWidth=2).encode(
+                    x='year:O'
+                )
+                final_chart = base_chart + highlight
+                st.altair_chart(final_chart, width="stretch")
+                st.caption(f"🔴 赤線: 発言が行われた年 ({speech_year}年)")
+            else:
+                st.altair_chart(base_chart, width="stretch")
+                st.caption(f"（※発言年の{speech_year}年はグラフ表示範囲外です）")
+        except:
+            st.altair_chart(base_chart, width="stretch")
 
 if __name__ == "__main__":
     main()
