@@ -45,10 +45,10 @@ def main():
     with col1:
         st.metric("🗣️ フィードバック総数", len(df))
     with col2:
-        high_urgency = len(df[df["L2_Urgency"] == "High"])
+        high_urgency = len(df[df["L2_Urgency"] == "高"])
         st.metric("🚨 緊急案件", high_urgency)
     with col3:
-        direct_actions = len(df[df["L3_Actionability"] == "Direct Intervention"])
+        direct_actions = len(df[df["L3_Actionability"] == "直接介入"])
         st.metric("⚡ 直接介入が必要な件数", direct_actions)
 
     st.divider()

@@ -2,20 +2,25 @@ import csv
 
 class CLODClassifier:
     def __init__(self):
-        # A simple keyword-based mock classification for demonstration purposes
+        # A simple keyword-based mock classification for Japanese text
         self.l1_mapping = {
-            "dirty": "Environment",
-            "tree": "Environment",
-            "traffic": "Infrastructure",
-            "broken": "Infrastructure",
-            "budget": "Governance",
-            "philosophy": "Abstract/Community"
+            "汚い": "環境",
+            "ごみ": "環境",
+            "おちば": "環境",
+            "木": "環境",
+            "信号": "インフラ",
+            "壊れ": "インフラ",
+            "道路": "インフラ",
+            "予算": "ガバナンス",
+            "透明": "ガバナンス",
+            "理念": "抽象・コミュニティ",
+            "方針": "抽象・コミュニティ"
         }
         
     def process_layer_1(self, data):
         # L1: Keyword Extraction / Basic Topic
-        text = data.get("voice", "").lower()
-        topic = "Other"
+        text = data.get("voice", "")
+        topic = "その他"
         for kw, cat in self.l1_mapping.items():
             if kw in text:
                 topic = cat
@@ -25,21 +30,21 @@ class CLODClassifier:
         
     def process_layer_2(self, data):
         # L2: Urgency/Sentiment (Mock logic)
-        text = data.get("voice", "").lower()
-        urgency = "High" if "broken" in text or "dirty" in text else "Normal"
+        text = data.get("voice", "")
+        urgency = "高" if "壊れ" in text or "汚い" in text or "緊急" in text else "通常"
         data["L2_Urgency"] = urgency
         return data
         
     def process_layer_3(self, data):
         # L3: Actionability (Mock logic)
         topic = data.get("L1_Topic", "")
-        action = "Direct Intervention" if topic in ["Environment", "Infrastructure"] else "Strategic Planning"
+        action = "直接介入" if topic in ["環境", "インフラ"] else "戦略的計画"
         data["L3_Actionability"] = action
         return data
         
     def process_layer_4(self, data):
         # L4: Final Categorization output
-        data["L4_Final_Status"] = "Processed"
+        data["L4_Final_Status"] = "処理済み"
         return data
         
     def predict(self, data):
