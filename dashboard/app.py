@@ -22,6 +22,10 @@ def load_starter_pack():
             return json.load(f)
     return {}
 
+@st.cache_data(show_spinner=False)
+def fetch_insight(speech_text, keyword, title):
+    return generate_insight(speech_text, keyword, title)
+
 def render_depth_gauge(score_text):
     if "Level 4" in score_text:
         pct, color = 100, "#28a745" # Green
@@ -41,8 +45,12 @@ def render_depth_gauge(score_text):
     """
     st.markdown(html, unsafe_allow_html=True)
 
+@st.cache_data(show_spinner=False)
+def fetch_insight(speech_text, keyword, title):
+    return generate_insight(speech_text, keyword, title)
+
 def main():
-    st.warning("**Current Version:** 1.1 Precision Update 🚀")
+    st.warning("**Current Version:** 1.2 Insight Fix 🚀")
     st.title("🏛️ C-LOD: Policy vs. Reality (Gap Analysis) 🇯🇵")
     st.markdown("政治家の発言（Words）と現実の統計（Results）のギャップを即座に可視化し、発言の「論理的深度」を評価します。")
 
@@ -67,6 +75,10 @@ def main():
         keyword = st.sidebar.text_input("検索キーワード", value="少子化")
         limit = st.sidebar.slider("取得件数", min_value=1, max_value=30, value=5)
         
+        # 開発用のキャッシュクリアボタン（強制リロード用）
+        if st.sidebar.button("🔄 キャッシュをクリアして再取得", type="primary"):
+            st.cache_data.clear()
+            
         if st.sidebar.button("🔍 ライブ検索実行", type="primary"):
             st.cache_data.clear()
             with st.spinner(f"「{keyword}」に関する国会発言を取得中... ⏳"):
@@ -178,7 +190,7 @@ def main():
     st.subheader("🤖 AIのやさしい要約 (Gemini Insight)")
     with st.spinner("Geminiが発言とデータを読み解いています... ✨"):
         # We use the full text from analyzed_record['voice'] and the stats title
-        insight_text = generate_insight(analyzed_record.get('voice', ''), keyword, stats_info.get('title', '関連統計'))
+        insight_text = fetch_insight(analyzed_record.get('voice', ''), keyword, stats_info.get('title', '関連統計'))
         st.info(insight_text, icon="💡")
 
 if __name__ == "__main__":
