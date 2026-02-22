@@ -8,7 +8,7 @@ import json
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from ingestion.api_client import fetch_diet_records
-from ingestion.estat_client import fetch_birth_rate_stats
+from ingestion.estat_client import fetch_stats_for_keyword
 from analysis.classifier import CLODClassifier
 
 st.set_page_config(page_title="C-LOD リアル分析", layout="wide", page_icon="🏛️")
@@ -20,6 +20,25 @@ def load_starter_pack():
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
+
+def render_depth_gauge(score_text):
+    if "Level 4" in score_text:
+        pct, color = 100, "#28a745" # Green
+    elif "Level 3" in score_text:
+        pct, color = 75, "#007bff"  # Blue
+    elif "Level 2" in score_text:
+        pct, color = 50, "#ffc107"  # Yellow
+    else:
+        pct, color = 25, "#dc3545"  # Red
+        
+    html = f"""
+    <div style="width: 100%; background-color: #333; border-radius: 5px; margin-bottom: 10px;">
+      <div style="width: {pct}%; height: 24px; background-color: {color}; border-radius: 5px; text-align: center; color: { 'white' if pct != 50 else 'black' }; font-weight: bold; line-height: 24px;">
+        {score_text}
+      </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 def main():
     st.title("🏛️ C-LOD: Policy vs. Reality (Gap Analysis) 🇯🇵")
@@ -52,6 +71,7 @@ def main():
                 try:
                     raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
                     st.session_state['live_records'] = raw_records
+                    st.success(f"📺 デバッグ: `{keyword}` のデータを {len(raw_records)} 件取得しました！")
                 except Exception as e:
                     st.error(f"国会会議録APIリクエストエラー: {e}")
                     
@@ -103,30 +123,36 @@ def main():
         st.markdown("#### 発言内容 (Words)")
         st.info(f"「... {analyzed_record['voice'][:300]} ...」") # 抜粋表示
         
-        st.markdown("#### 評価結果 (Score)")
-        metric_col1, metric_col2 = st.columns(2)
-        metric_col1.metric("L2 (コミットメント)", analyzed_record['L2_Urgency'])
-        metric_col2.metric("L4 (論理的深度)", analyzed_record['L4_Final_Status'])
+        # Evidence Badge
+        if analyzed_record.get('Has_Evidence', False):
+            st.markdown("### 🏅 Evidence Badge\n**[✅ Evidence Present]** 具体的な数値・データへの言及が確認されました。")
+        else:
+            st.markdown("### 🏅 Evidence Badge\n**[❌ No Evidence]** データに基づく客観的な裏付けが不足しています。")
         
-        score_level = analyzed_record['L4_Final_Status']
-        if "Level 4" in score_level:
+        st.markdown("#### 論理的深度 (Logical Depth L1-L4)")
+        render_depth_gauge(analyzed_record['L4_Final_Status'])
+        
+        st.markdown(f"**L2 (コミットメント):** {analyzed_record['L2_Urgency']}")
+        if "Level 4" in analyzed_record['L4_Final_Status']:
             st.success("✅ **高評価**: 具体的なデータに基づいた実現性の高い公約です。")
-        elif "Level 1" in score_level:
+        elif "Level 1" in analyzed_record['L4_Final_Status']:
             st.error("📉 **抽象的**: 具体性が欠けており、ポピュリズムの可能性があります。")
 
     with col_chart:
         st.markdown("#### 現実の統計推移 (Results - e-Stat)")
         
         with st.spinner("e-Statデータを取得中... ⏳"):
-            stats_data = fetch_birth_rate_stats()
+            stats_info = fetch_stats_for_keyword(keyword)
             
-        df_stats = pd.DataFrame(stats_data)
+        st.markdown(f"**⚡ Causality Summary**\n- **Speech Topic:** `{keyword}`\n- **Statistic:** `{stats_info['title']}`")
+        
+        df_stats = pd.DataFrame(stats_info['data'])
         
         # Causality Visualization: Overlay the speech year on the reality chart
         base_chart = alt.Chart(df_stats).mark_line(point=True).encode(
             x=alt.X("year:O", title="年"),
-            y=alt.Y("births:Q", title="出生数 (現実)", scale=alt.Scale(zero=False)),
-            tooltip=["year", "births"]
+            y=alt.Y("value:Q", title=stats_info['y_label'], scale=alt.Scale(zero=False)),
+            tooltip=["year", "value"]
         ).properties( height=250 )
         
         # Highlight the year the speech was made

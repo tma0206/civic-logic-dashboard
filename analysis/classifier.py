@@ -39,10 +39,13 @@ class CLODClassifier:
         # 数字や統計に言及しているか？
         evidence_keywords = ["％", "パーセント", "万人", "億円", "兆円", "低下", "減少", "統計", "推移"]
         action = "エビデンスなし（抽象的）"
+        has_evidence = False
         if any(kw in text for kw in evidence_keywords):
             action = "エビデンスあり（データ言及）"
+            has_evidence = True
             
         data["L3_Actionability"] = action
+        data["Has_Evidence"] = has_evidence
         return data
         
     def process_layer_4(self, data):
