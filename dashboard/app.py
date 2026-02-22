@@ -28,9 +28,16 @@ def main():
     
     with col1:
         st.subheader("🗣️ 直近の国会発言（Diet Records）")
+        
+        # 開発用のキャッシュクリアボタン（強制リロード用）
+        if st.sidebar.button("🔄 キャッシュをクリアして再取得", type="primary"):
+            st.cache_data.clear()
+            
         with st.spinner(f"「{keyword}」に関する国会発言を取得中... ⏳"):
             try:
                 raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
+                # 追加: データをフロントエンドで正しく認識できているか確認するためのデバッグプリント
+                st.success(f"📺 デバッグ: `{keyword}` のデータを {len(raw_records)} 件取得しました！")
             except Exception as e:
                 st.error(f"国会会議録APIリクエストエラー: {e}")
                 raw_records = []
