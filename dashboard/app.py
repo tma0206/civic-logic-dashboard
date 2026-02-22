@@ -4,110 +4,84 @@ import altair as alt
 import sys
 import os
 
-# sys.path に親ディレクトリを追加しモジュールをインポート可能にする
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from ingestion.loader import load_data
+from ingestion.api_client import fetch_diet_records
+from ingestion.estat_client import fetch_birth_rate_stats
 from analysis.classifier import CLODClassifier
 
-# ページの基本設定（モダンなレイアウトとアイコン）
-st.set_page_config(page_title="C-LOD ダッシュボード", layout="wide", page_icon="🌸")
+st.set_page_config(page_title="C-LOD リアル分析", layout="wide", page_icon="🏛️")
 
 def main():
-    st.title("🏛️ Civic Logic Dashboard (C-LOD) 🌸")
-    st.markdown("市民の声を分析し、アクション可能なインサイトを提供します。 ✨")
+    st.title("🏛️ C-LOD: 政治発言の論理的深度分析 🇯🇵")
+    st.markdown("国会会議録とe-Stat（政府統計）を連携させ、政治家の発言の「論理的深度（L1-L4）」と現実のギャップを可視化します。")
 
-    # --- 1. データ読み込み ---
-    data_path = os.path.join(os.path.dirname(__file__), '..', 'test_data.csv')
+    # サイドバーでキーワード設定
+    st.sidebar.header("🔍 分析設定")
+    keyword = st.sidebar.text_input("検索キーワード", value="少子化")
+    limit = st.sidebar.slider("取得件数", min_value=1, max_value=30, value=10)
     
-    with st.spinner("データを読み込み中... ⏳"):
-        raw_data = load_data(data_path)
-    
-    if not raw_data:
-        st.error(f"データの読み込みに失敗しました。`test_data.csv` がルートディレクトリに存在するか確認してください。 🚨")
-        return
-
-    # --- 2. データ処理 ---
+    # データの取得と分析
     classifier = CLODClassifier()
-    processed_records = []
     
-    with st.spinner("市民の声を分析中... 🧠"):
-        for row in raw_data:
-            result = classifier.predict(row.copy())
-            processed_records.append(result)
-
-    # DataFrameへの変換
-    df = pd.DataFrame(processed_records)
-
-    # --- 3. 概要（Overview） ---
-    st.subheader("📊 プロジェクト概要")
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns([2, 1])
+    
     with col1:
-        st.metric("🗣️ フィードバック総数", len(df))
+        st.subheader("🗣️ 直近の国会発言（Diet Records）")
+        with st.spinner(f"「{keyword}」に関する国会発言を取得中... ⏳"):
+            raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
+            
+        if not raw_records:
+            st.warning("データが取得できませんでした。時間をおいて再試行してください。")
+            return
+            
+        processed_records = [classifier.predict(r.copy()) for r in raw_records]
+        df_diet = pd.DataFrame(processed_records)
+        
+        # 概要メトリクス
+        st.write("### 📊 L4 深度分析スコア")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Level 4 (データに基づく具体策)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 4")]))
+        m2.metric("Level 3 (強いコミットメント)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 3")]))
+        m3.metric("Level 2 (現状分析のみ)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 2")]))
+        m4.metric("Level 1 (抽象的・ポピュリズム)", len(df_diet[df_diet["L4_Final_Status"].str.contains("Level 1")]))
+        
+        # 発言データテーブル
+        st.dataframe(
+            df_diet[["date", "speaker", "voice", "L2_Urgency", "L3_Actionability", "L4_Final_Status"]],
+            column_config={
+                "date": "日付",
+                "speaker": "発言者",
+                "voice": st.column_config.TextColumn("発言内容", width="large"),
+                "L2_Urgency": "コミットメント",
+                "L3_Actionability": "エビデンス",
+                "L4_Final_Status": "論理的深度 (L4)"
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+
     with col2:
-        high_urgency = len(df[df["L2_Urgency"] == "高"])
-        st.metric("🚨 緊急案件", high_urgency)
-    with col3:
-        direct_actions = len(df[df["L3_Actionability"] == "直接介入"])
-        st.metric("⚡ 直接介入が必要な件数", direct_actions)
-
-    st.divider()
-
-    # --- 4. グラフ可視化 ---
-    st.subheader("📈 トピック別分布 ＆ アクション")
-    
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        # トピック別棒グラフ
-        topic_counts = df["L1_Topic"].value_counts().reset_index()
-        topic_counts.columns = ["Topic", "Count"]
+        st.subheader("📉 統計データとのギャップ検証")
+        st.markdown("e-Statから取得した実際のデータ推移（例：出生数）")
         
-        topic_chart = alt.Chart(topic_counts).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X("Topic", sort="-y", title="L1 トピックカテゴリ"),
-            y=alt.Y("Count", title="件数"),
-            color=alt.Color("Topic", legend=None, scale=alt.Scale(scheme="teals")),
-            tooltip=["Topic", "Count"]
-        ).properties(
-            title="🏷️ トピックごとの声の数",
-            height=320
-        )
-        st.altair_chart(topic_chart, use_container_width=True)
-
-    with chart_col2:
-        # アクション別ドーナツチャート
-        action_counts = df["L3_Actionability"].value_counts().reset_index()
-        action_counts.columns = ["Action", "Count"]
+        with st.spinner("e-Statデータを取得中... ⏳"):
+            stats_data = fetch_birth_rate_stats()
+            
+        df_stats = pd.DataFrame(stats_data)
         
-        action_chart = alt.Chart(action_counts).mark_arc(innerRadius=60).encode(
-            theta=alt.Theta(field="Count", type="quantitative"),
-            color=alt.Color(field="Action", type="nominal", scale=alt.Scale(scheme="set2")),
-            tooltip=["Action", "Count"]
+        # 折れ線グラフ
+        chart = alt.Chart(df_stats).mark_line(point=True, color="firebrick").encode(
+            x=alt.X("year:O", title="年"),
+            y=alt.Y("births:Q", title="出生数", scale=alt.Scale(zero=False)),
+            tooltip=["year", "births"]
         ).properties(
-            title="🎯 アクションタイプ",
-            height=320
+            title="日本の年間出生数推移",
+            height=300
         )
-        st.altair_chart(action_chart, use_container_width=True)
-
-    st.divider()
-
-    # --- 5. 生データテーブル ---
-    st.subheader("📋 詳細な分析結果")
-    st.markdown("L1層からL4層までのカテゴリ分類結果の一覧です。")
-    
-    st.dataframe(
-        df[["id", "voice", "L1_Topic", "L2_Urgency", "L3_Actionability", "L4_Final_Status"]],
-        column_config={
-            "id": st.column_config.NumberColumn("ID", format="%d"),
-            "voice": st.column_config.TextColumn("市民の声 🗣️", width="large"),
-            "L1_Topic": st.column_config.TextColumn("L1 (トピック 🏷️)"),
-            "L2_Urgency": st.column_config.TextColumn("L2 (緊急度 🚨)"),
-            "L3_Actionability": st.column_config.TextColumn("L3 (アクション 🎯)"),
-            "L4_Final_Status": st.column_config.TextColumn("L4 (ステータス ✅)")
-        },
-        hide_index=True,
-        use_container_width=True
-    )
+        st.altair_chart(chart, use_container_width=True)
+        
+        st.info("💡 **Reality Gap Analysis**: \n\n国会での「強いコミットメント」や「論理的な具体策（L4）」が増えている一方で、実際の統計指標が改善されていない場合、そこには「実行プロセス」や「政策の有効性」における深刻なギャップが存在することを示唆しています。")
 
 if __name__ == "__main__":
     main()

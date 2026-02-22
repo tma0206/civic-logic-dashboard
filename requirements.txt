@@ -2,3 +2,7 @@
 numpy
 pandas
 scikit-learn
+streamlit
+altair
+requests
+python-dotenv
