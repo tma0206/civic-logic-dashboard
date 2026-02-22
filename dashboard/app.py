@@ -29,10 +29,15 @@ def main():
     with col1:
         st.subheader("🗣️ 直近の国会発言（Diet Records）")
         with st.spinner(f"「{keyword}」に関する国会発言を取得中... ⏳"):
-            raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
+            try:
+                raw_records = fetch_diet_records(keyword=keyword, max_records=limit)
+            except Exception as e:
+                st.error(f"国会会議録APIリクエストエラー: {e}")
+                raw_records = []
             
         if not raw_records:
-            st.warning("データが取得できませんでした。時間をおいて再試行してください。")
+            st.warning("対象キーワードでの国会発言データが取得できませんでした。")
+            st.info("💡 **ヒント**: \n- 検索期間内に該当の発言がない可能性があります。キーワードを「予算」や「教育」などに変えてみてください。\n- 実行環境（Windows PowerShell等）の文字コードの影響で日本語クエリが正しくAPIに送信されていない場合があります。その場合はコマンドプロンプトや `set PYTHONIOENCODING=utf-8` をお試しください。")
             return
             
         processed_records = [classifier.predict(r.copy()) for r in raw_records]
