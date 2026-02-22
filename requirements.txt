@@ -6,3 +6,4 @@ streamlit
 altair
 requests
 python-dotenv
+google-generativeai

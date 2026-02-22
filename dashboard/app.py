@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ingestion.api_client import fetch_diet_records
 from ingestion.estat_client import fetch_stats_for_keyword
 from analysis.classifier import CLODClassifier
+from analysis.insight_generator import generate_insight
 
 st.set_page_config(page_title="C-LOD リアル分析", layout="wide", page_icon="🏛️")
 
@@ -41,6 +42,7 @@ def render_depth_gauge(score_text):
     st.markdown(html, unsafe_allow_html=True)
 
 def main():
+    st.warning("**Current Version:** 1.1 Precision Update 🚀")
     st.title("🏛️ C-LOD: Policy vs. Reality (Gap Analysis) 🇯🇵")
     st.markdown("政治家の発言（Words）と現実の統計（Results）のギャップを即座に可視化し、発言の「論理的深度」を評価します。")
 
@@ -171,6 +173,13 @@ def main():
                 st.caption(f"（※発言年の{speech_year}年はグラフ表示範囲外です）")
         except:
             st.altair_chart(base_chart, width="stretch")
+
+    st.markdown("---")
+    st.subheader("🤖 AIのやさしい要約 (Gemini Insight)")
+    with st.spinner("Geminiが発言とデータを読み解いています... ✨"):
+        # We use the full text from analyzed_record['voice'] and the stats title
+        insight_text = generate_insight(analyzed_record.get('voice', ''), keyword, stats_info.get('title', '関連統計'))
+        st.info(insight_text, icon="💡")
 
 if __name__ == "__main__":
     main()
